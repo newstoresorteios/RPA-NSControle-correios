@@ -1,0 +1,33 @@
+{
+  "name": "rpa-nscontrole-correios",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Playwright RPA for Portal Importador (Correios) customs tax/boleto scrape into NSControle Neon",
+  "scripts": {
+    "smoke": "node --env-file=.env.local scripts/correios-rpa-smoke.mjs",
+    "recover": "node --env-file=.env.local scripts/correios-rpa-recover-boleto.mjs",
+    "copiar-once": "node --env-file=.env.local scripts/correios-rpa-copiar-once.mjs",
+    "imprimir-once": "node --env-file=.env.local scripts/correios-rpa-imprimir-once.mjs",
+    "entregues": "node --env-file=.env.local scripts/correios-rpa-entregues.mjs",
+    "entregues:batch": "node --env-file=.env.local scripts/run-entregues-batch-until-done.mjs",
+    "fill-gaps": "node --env-file=.env.local scripts/correios-rpa-fill-gaps.mjs",
+    "parse-entregues": "node scripts/parse-entregues-xlsx.mjs",
+    "neon-paid": "node --env-file=.env.local scripts/neon-entregues-paid.mjs",
+    "migrate": "node --env-file=.env.local scripts/apply-migration.mjs",
+    "migrate:boleto-pending": "node --env-file=.env.local scripts/apply-boleto-pending-migration.mjs",
+    "seed:legacy-26438": "node --env-file=.env.local scripts/seed-correios-legacy-26438.mjs",
+    "postinstall": "npx playwright install chromium"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "postgres": "^3.4.9",
+    "unpdf": "^1.8.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}

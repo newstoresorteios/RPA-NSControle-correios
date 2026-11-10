@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# Runtime / local artifacts
+node_modules/
+storage/boletos/**
+!storage/boletos/.gitkeep
+storage/entregues/**
+!storage/entregues/.gitkeep
+storage/sept-gaps/**
+!storage/sept-gaps/.gitkeep
+media/**
+!media/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
