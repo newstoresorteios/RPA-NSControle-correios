@@ -1,0 +1,63 @@
+name: Correios hourly Path A/B
+
+on:
+  schedule:
+    # Hourly UTC
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  hourly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Materialize .env.local from secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          CORREIOS_USER: ${{ secrets.CORREIOS_USER }}
+          CORREIOS_PASSWORD: ${{ secrets.CORREIOS_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+
+          keys = [
+              "DATABASE_URL",
+              "DATABASE_URL_UNPOOLED",
+              "CORREIOS_USER",
+              "CORREIOS_PASSWORD",
+          ]
+          missing = [k for k in keys if not os.environ.get(k)]
+          if missing:
+              print("Missing required GitHub secrets:", ", ".join(missing), file=sys.stderr)
+              sys.exit(1)
+
+          with open(".env.local", "w", encoding="utf-8", newline="\n") as f:
+              for k in keys:
+                  f.write(f"{k}={os.environ[k]}\n")
+              f.write("HEADED=0\n")
+          print("Wrote .env.local (values redacted); HEADED=0")
+          PY
+
+      - name: Run hourly Path A/B queue
+        env:
+          HEADED: "0"
+          HOURLY_LIMIT: "12"
+        run: npm run hourly

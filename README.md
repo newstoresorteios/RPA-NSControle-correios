@@ -32,6 +32,11 @@ Details: [docs/plano-rpa-correios.md](docs/plano-rpa-correios.md).
 # Path A/B smoke for one tracking
 npm run smoke -- LX335304323JP
 
+# Hourly Path A/B queue (Neon pending → smoke, bounded)
+# HOURLY_LIMIT=12 by default; GitHub Actions cron uses this
+npm run hourly
+# npm run hourly -- --limit 5
+
 # Path C single / batch
 npm run entregues -- LW061145525US
 npm run entregues -- --batch --from storage/entregues/entregues-trackings.json
@@ -66,6 +71,14 @@ storage/boletos|entregues|sept-gaps/
 media/                    smoke screenshots / JSON results
 docs/                     Path A/B/C plan + project context
 ```
+
+## GitHub Actions (hourly)
+
+Workflow: `.github/workflows/correios-hourly.yml` — cron `0 * * * *` (UTC) + `workflow_dispatch`.
+
+Job command: `npm run hourly` (after materializing `.env.local` from repo secrets).
+
+Required repo secrets (names only): `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `CORREIOS_USER`, `CORREIOS_PASSWORD`. Workflow forces `HEADED=0`.
 
 ## Security
 
