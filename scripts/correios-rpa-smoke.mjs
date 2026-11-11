@@ -424,18 +424,57 @@ async function main() {
     result.raw.searchSnippet = resultText.slice(0, 1500);
 
     if (!/Aguardando Pagamento/i.test(resultText)) {
-      result.paymentStatus = /pago|pago|quitad/i.test(resultText)
-        ? "paid"
-        : /n[aã]o encontr|sem registro|nenhum registro/i.test(resultText)
-          ? "not_found"
-          : "no_action";
-      result.error = `situation not Aguardando Pagamento (status=${result.paymentStatus})`;
-      result.ok = result.paymentStatus !== "error";
+      // Terminal / non-Path-A/B situations — skip boleto work; count as handled for hourly.
+      const delivered =
+        /Entregue ao Destinat[aá]rio/i.test(resultText) ||
+        /Encomenda Entregue/i.test(resultText);
+      const paymentConfirmed = /Pagamento Confirmado/i.test(resultText);
+      const paidLike =
+        paymentConfirmed ||
+        /\bpago\b|\bquitad/i.test(resultText);
+      const notFound = /n[aã]o encontr|sem registro|nenhum registro/i.test(resultText);
+
+      if (delivered) {
+        result.paymentStatus = "no_action";
+        result.raw.situation = "delivered";
+        result.note = `smoke ${TRACKING}: delivered (Entregue) — skip Path A/B; status=no_action`;
+        result.error = null;
+      } else if (paidLike) {
+        result.paymentStatus = "paid";
+        result.raw.situation = paymentConfirmed ? "payment_confirmed" : "paid";
+        result.note = `smoke ${TRACKING}: paid/confirmado — skip Path A/B; status=paid`;
+        result.error = null;
+      } else if (notFound) {
+        result.paymentStatus = "not_found";
+        result.raw.situation = "not_found";
+        result.note = `smoke ${TRACKING}: not_found on portal — skip Path A/B`;
+        result.error = `situation not Aguardando Pagamento (status=not_found)`;
+      } else {
+        result.paymentStatus = "no_action";
+        result.raw.situation = "other";
+        result.note = `smoke ${TRACKING}: situation not Aguardando Pagamento — skip Path A/B; status=no_action`;
+        result.error = `situation not Aguardando Pagamento (status=no_action)`;
+      }
+
+      result.ok = true;
       // still try to capture any valor on page
       result.taxAmount = parseMoney(resultText);
       const db = await upsertDb(env, result);
+      writeFileSync(join(MEDIA, "result.json"), JSON.stringify({ result, db }, null, 2));
       console.log("DB:", JSON.stringify(db, null, 2));
       console.log("RESULT:", JSON.stringify({ ...result, pass: undefined }, null, 2));
+      console.log("SMOKE_OK", JSON.stringify({
+        tracking: TRACKING,
+        taxAmount: result.taxAmount,
+        linha: result.linha,
+        pdfPath: result.pdfPath,
+        paymentStatus: result.paymentStatus,
+        situation: result.raw.situation || null,
+        terminal: true,
+        orderId: db.order?.id || null,
+        taxId: db.tax?.id || null,
+        boletoId: db.boleto?.id || null,
+      }));
       return;
     }
 

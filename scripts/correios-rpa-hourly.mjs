@@ -11,8 +11,9 @@
  *
  * Queue (Path A/B):
  *   tracking_code present, tax_paid = false, and either no ctl_correios_taxas row
- *   or payment_status in pending / awaiting_payment / boleto_pending / error.
- * Skips paid / not_found / no_action / overdue.
+ *   or payment_status in awaiting_payment / boleto_pending / pending.
+ * Skips terminal / non-productive: paid, not_found, no_action (delivered), overdue, error.
+ * Prefer awaiting_payment / boleto_pending / pending over stale error rows.
  */
 import { spawn } from "node:child_process";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
@@ -73,8 +74,18 @@ function runSmoke(tracking, env) {
   });
 }
 
+const TERMINAL_OK_STATUSES = new Set([
+  "not_found",
+  "no_action",
+  "paid",
+  "boleto_generated",
+  "boleto_pending",
+  "awaiting_payment",
+]);
+
 function parseSmokeOutcome(out, tracking) {
-  const okLine = [...out.split(/\r?\n/)].reverse().find((l) => l.startsWith("SMOKE_OK"));
+  const lines = out.split(/\r?\n/);
+  const okLine = [...lines].reverse().find((l) => l.startsWith("SMOKE_OK"));
   if (okLine) {
     const jsonStart = okLine.indexOf("{");
     try {
@@ -83,7 +94,38 @@ function parseSmokeOutcome(out, tracking) {
       return { ok: true, tracking };
     }
   }
-  const failLine = [...out.split(/\r?\n/)].reverse().find((l) => l.startsWith("SMOKE_FAIL"));
+  // Early terminal exits print RESULT (ok:true) without SMOKE_OK — treat as handled success.
+  const resultLine = [...lines].reverse().find((l) => l.startsWith("RESULT:"));
+  if (resultLine) {
+    const jsonStart = resultLine.indexOf("{");
+    if (jsonStart >= 0) {
+      try {
+        const parsed = JSON.parse(resultLine.slice(jsonStart));
+        if (parsed && parsed.ok === true) {
+          return {
+            ok: true,
+            tracking: parsed.tracking || tracking,
+            paymentStatus: parsed.paymentStatus || null,
+            taxAmount: parsed.taxAmount ?? null,
+            linha: parsed.linha ?? null,
+            pdfPath: parsed.pdfPath ?? null,
+            terminal: true,
+          };
+        }
+        if (parsed && parsed.ok === false) {
+          return {
+            ok: false,
+            tracking: parsed.tracking || tracking,
+            paymentStatus: parsed.paymentStatus || null,
+            error: parsed.error || "result_ok_false",
+          };
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+  const failLine = [...lines].reverse().find((l) => l.startsWith("SMOKE_FAIL"));
   if (failLine) {
     return { ok: false, tracking, error: failLine.replace(/^SMOKE_FAIL\s*/, "").trim() || "smoke_fail" };
   }
@@ -135,15 +177,14 @@ try {
       and coalesce(o.tax_paid, false) = false
       and (
         t.id is null
-        or t.payment_status in ('pending', 'awaiting_payment', 'boleto_pending', 'error')
+        or t.payment_status in ('awaiting_payment', 'boleto_pending', 'pending')
       )
     order by
       case t.payment_status
-        when 'boleto_pending' then 0
-        when 'awaiting_payment' then 1
+        when 'awaiting_payment' then 0
+        when 'boleto_pending' then 1
         when 'pending' then 2
-        when 'error' then 3
-        else 4
+        else 3
       end,
       o.tax_identified_at nulls first,
       o.created_at desc nulls last
@@ -196,11 +237,14 @@ try {
       limit 1
     `;
     const rowN = neon[0];
+    const neonStatus = rowN?.payment_status || null;
+    const parsedStatus = parsed.paymentStatus || null;
     const ok =
       code === 0 &&
       (parsed.ok === true ||
         rowN?.import_tax != null ||
-        ["boleto_generated", "boleto_pending", "awaiting_payment", "paid"].includes(rowN?.payment_status));
+        TERMINAL_OK_STATUSES.has(parsedStatus) ||
+        TERMINAL_OK_STATUSES.has(neonStatus));
     if (ok) {
       report.summary.ok += 1;
       upserted += 1;
